@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, WS_BASE, TranscriptEntry, Juror } from "@/components/courtroom/types";
 import { InitScreen } from "@/components/courtroom/InitScreen";
 import { Header } from "@/components/courtroom/Header";
@@ -8,6 +8,8 @@ import { CaseSummary } from "@/components/courtroom/CaseSummary";
 import { TranscriptArea } from "@/components/courtroom/TranscriptArea";
 import { ControlsBar } from "@/components/courtroom/ControlsBar";
 import { JuryPanel } from "@/components/courtroom/JuryPanel";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useTTS } from "@/hooks/use-tts";
 
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -22,6 +24,19 @@ export default function Home() {
   const [, setLastObjection] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+
+  const { speak, stop: stopTTS, speakingId } = useTTS();
+
+  const handleSpeechResult = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
+  const {
+    isListening,
+    isSupported: sttSupported,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition(handleSpeechResult);
 
   async function initGame() {
     if (!caseName.trim()) return;
@@ -119,6 +134,7 @@ export default function Home() {
 
         case "stream_interrupted":
           setStreamingSpeaker(null);
+          stopTTS();
           break;
 
         case "jury_update":
@@ -139,12 +155,12 @@ export default function Home() {
       ws.close();
       wsRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, stopTTS]);
 
   function sendStatement() {
     if (!input.trim() || !wsRef.current) return;
-    wsRef.current.send(JSON.stringify({ action: "STATEMENT", content: input }));
-    setTranscript((prev) => [...prev, { speaker: "Defense", content: input, type: "statement" as const }]);
+    const content = input;
+    wsRef.current.send(JSON.stringify({ action: "STATEMENT", content }));
     setInput("");
     setCurrentTurn("");
   }
@@ -166,19 +182,28 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-zinc-950 text-foreground overflow-hidden">
+    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
       <Header sessionId={sessionId} />
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         <div className="flex flex-col flex-1 min-w-0 min-h-0">
           <CaseSummary summary={caseSummary} />
-          <TranscriptArea transcript={transcript} streamingSpeaker={streamingSpeaker} />
+          <TranscriptArea
+            transcript={transcript}
+            streamingSpeaker={streamingSpeaker}
+            onSpeak={speak}
+            onStopSpeaking={stopTTS}
+            speakingId={speakingId}
+          />
           <ControlsBar
             currentTurn={currentTurn}
             input={input}
             setInput={setInput}
             onSendStatement={sendStatement}
             onSendObjection={sendObjection}
+            isListening={isListening}
+            sttSupported={sttSupported}
+            onToggleMic={isListening ? stopListening : startListening}
           />
         </div>
 

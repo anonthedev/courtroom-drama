@@ -18,16 +18,14 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field, field_validator
 
-# Configure logging
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env
 load_dotenv()
 
-# ---------------------------------------------------------------------------
 # Pydantic Models
-# ---------------------------------------------------------------------------
 
 Turn = Literal["Prosecution", "Witness", "Judge", "Defense"]
 
@@ -81,9 +79,7 @@ class InitRequest(BaseModel):
     case_name: str = "The State vs. Cyberdyne Systems"
 
 
-# ---------------------------------------------------------------------------
 # LangGraph State
-# ---------------------------------------------------------------------------
 
 TURN_ORDER: list[Turn] = ["Prosecution", "Witness", "Defense"]
 
@@ -97,9 +93,7 @@ class TrialState(TypedDict):
     objection_ground: str
 
 
-# ---------------------------------------------------------------------------
-# LLM helpers
-# ---------------------------------------------------------------------------
+#LLM helpers
 
 def _get_llm(temperature: float = 0.8) -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=temperature)
@@ -109,14 +103,14 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "Prosecution": (
         "You are the Prosecution attorney in a courtroom trial. "
         "Present evidence, question witnesses, and build a compelling case against the defendant. "
-        "Be assertive, logical, and persuasive. Keep responses to 2-4 paragraphs. "
+        "Be assertive, logical, and persuasive. Keep responses to 1-2 paragraphs. "
         "Address the court formally. Reference prior testimony when relevant."
     ),
     "Witness": (
         "You are a key witness in a courtroom trial. "
         "Answer questions truthfully based on what you observed. "
         "Show realistic emotions — nervousness, hesitation, or confidence as appropriate. "
-        "Keep responses to 1-3 paragraphs. You may be evasive on details you're unsure about."
+        "Keep responses to 1-2 paragraphs. You may be evasive on details you're unsure about."
     ),
     "Judge": (
         "You are the presiding Judge in a courtroom trial. "
@@ -142,9 +136,7 @@ JURY_EVALUATION_PROMPT = (
 )
 
 
-# ---------------------------------------------------------------------------
-# LangGraph Node Functions
-# ---------------------------------------------------------------------------
+#Node Functions
 
 async def prosecution_node(state: TrialState) -> dict[str, Any]:
     llm = _get_llm()
@@ -213,10 +205,7 @@ def _format_transcript(state: TrialState) -> str:
             lines.append(f"[{role}]: {msg.content}")
     return "\n".join(lines[-20:]) if lines else "(No testimony yet)"
 
-
-# ---------------------------------------------------------------------------
-# LangGraph Conditional Routing
-# ---------------------------------------------------------------------------
+#conditional routing
 
 def route_after_prosecution(state: TrialState) -> str:
     if state.get("is_objection_active"):
@@ -234,9 +223,7 @@ def route_after_judge(state: TrialState) -> str:
     return END
 
 
-# ---------------------------------------------------------------------------
-# Build the LangGraph
-# ---------------------------------------------------------------------------
+# Build LangGraph
 
 def build_trial_graph() -> StateGraph:
     graph = StateGraph(TrialState)
@@ -259,10 +246,7 @@ def build_trial_graph() -> StateGraph:
 
     return graph.compile()
 
-
-# ---------------------------------------------------------------------------
-# Jury Sentiment Evaluator (Structured Output)
-# ---------------------------------------------------------------------------
+#Jury sentiments (Structured Output)
 
 async def evaluate_jury_sentiment(transcript: list[Any], case_summary: str) -> JuryVerdict:
     llm = _get_llm(temperature=0.6)
@@ -287,9 +271,7 @@ async def evaluate_jury_sentiment(transcript: list[Any], case_summary: str) -> J
     return result
 
 
-# ---------------------------------------------------------------------------
-# Session Store
-# ---------------------------------------------------------------------------
+#Session store
 
 class Session:
     def __init__(self, state: TrialState):
@@ -312,9 +294,7 @@ def _default_jury_sentiments() -> list[dict[str, Any]]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# FastAPI App
-# ---------------------------------------------------------------------------
+#fastApi setup
 
 app = FastAPI(title="Courtroom Simulation", version="0.1.0")
 
@@ -343,9 +323,7 @@ class CORSHTTPOnly:
 app.add_middleware(CORSHTTPOnly)
 
 
-# ---------------------------------------------------------------------------
 # POST /api/game/init
-# ---------------------------------------------------------------------------
 
 @app.post("/api/game/init", response_model=CaseFile)
 async def init_game(req: InitRequest) -> CaseFile:
@@ -380,9 +358,17 @@ async def init_game(req: InitRequest) -> CaseFile:
     )
 
 
-# ---------------------------------------------------------------------------
+# GET /api/stt/token
+
+@app.get("/api/stt/token")
+async def stt_token() -> dict[str, str]:
+    key = os.getenv("DEEPGRAM_API_KEY", "")
+    if not key:
+        raise ValueError("DEEPGRAM_API_KEY is not configured")
+    return {"key": key}
+
+
 # WebSocket /ws/trial/{session_id}
-# ---------------------------------------------------------------------------
 
 async def _stream_agent_turn(
     session: Session,
@@ -653,9 +639,7 @@ async def trial_websocket(websocket: WebSocket, session_id: str) -> None:
             pass
 
 
-# ---------------------------------------------------------------------------
-# Uvicorn entry point
-# ---------------------------------------------------------------------------
+#uvicorn entry point
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, ws="wsproto")
